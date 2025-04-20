@@ -1,0 +1,6 @@
+releng/out/
+releng/work/
+*.iso
+
+*.log
+
