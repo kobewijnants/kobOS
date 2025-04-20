@@ -1,1 +1,71 @@
 #!/usr/bin/env bash
+set -e
+
+trap 'echo -e "\nInstallation cancelled. Exiting."; exit 1' INT
+
+# --- USER INPUT ---
+hostname=$(gum input --placeholder "Enter hostname")
+username=$(gum input --placeholder "Enter username")
+
+# Print disks
+lsblk
+disk=$(gum choose --height 20 --limit 1 $(lsblk -d -n -p -o NAME | grep -v "loop" | grep -v "sr0"))
+boot_size=$(gum input --placeholder "Enter boot partition size (e.g. 1GiB)")
+swap_size=$(gum input --placeholder "Enter swap partition size (e.g. 2GiB)")
+
+user_password=$(gum input --password --placeholder "Enter password for $username")
+root_password=$(gum input --password --placeholder "Enter root password")
+
+gum confirm "This will erase all data on $disk. Continue?" || exit 1
+
+# --- CALCULATE PARTITION OFFSETS ---
+boot_end="$boot_size"
+swap_start="$boot_size"
+swap_end=$(numfmt --to=iec --format="%f" --suffix=B --from=iec "$boot_size+$swap_size")
+root_start="$swap_end"
+
+# --- PARTITION DISK ---
+gum spin --title "Partitioning $disk..." -- bash -c "
+  parted -s $disk mklabel gpt
+  parted -s $disk mkpart primary fat32 1MiB $boot_end
+  parted -s $disk set 1 esp on
+  parted -s $disk mkpart primary linux-swap $swap_start $swap_end
+  parted -s $disk mkpart primary ext4 $root_start 100%
+  mkfs.fat -F32 ${disk}1
+  mkswap ${disk}2
+  mkfs.ext4 -F ${disk}3
+"
+
+# --- MOUNT FILESYSTEMS ---
+mount ${disk}3 /mnt
+mkdir -p /mnt/boot
+mount ${disk}1 /mnt/boot
+swapon ${disk}2
+
+# --- INSTALL BASE SYSTEM ---
+gum spin --title "Installing base system..." -- bash -c "
+  pacstrap /mnt base linux linux-firmware grub efibootmgr networkmanager sudo
+"
+
+genfstab -U /mnt >>/mnt/etc/fstab
+
+# --- CONFIGURE SYSTEM ---
+gum spin --title "Configuring system..." -- bash -c "
+arch-chroot /mnt /bin/bash -e <<EOF
+  ln -sf /usr/share/zoneinfo/Europe/Brussels /etc/localtime
+  hwclock --systohc
+  echo en_US.UTF-8 UTF-8 > /etc/locale.gen
+  locale-gen
+  echo LANG=en_US.UTF-8 > /etc/locale.conf
+  echo $hostname > /etc/hostname
+  useradd -m -G wheel -s /bin/bash $username
+  echo '$username:$user_password' | chpasswd
+  echo 'root:$root_password' | chpasswd
+  echo '$username ALL=(ALL) ALL' > /etc/sudoers.d/$username
+  systemctl enable NetworkManager
+  grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+  grub-mkconfig -o /boot/grub/grub.cfg
+EOF
+"
+
+gum style --border double --margin "1" --padding "1 2" "Installation complete. You can reboot now."

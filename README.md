@@ -24,6 +24,7 @@ git clone --depth 1 https://github.com/kobewijnants/kobOS.git
 
 ```bash
 cd kobOS/releng
+sudo rm -rf out work
 sudo mkarchiso -v .
 ```
 
