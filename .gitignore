@@ -1,5 +1,5 @@
-releng/out/
-releng/work/
+archiso/out/
+archiso/work/
 *.iso
 
 *.log

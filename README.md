@@ -23,7 +23,7 @@ git clone --depth 1 https://github.com/kobewijnants/kobOS.git
 3. Build the ISO
 
 ```bash
-cd kobOS/releng
+cd kobOS/archiso
 sudo rm -rf out work
 sudo mkarchiso -v .
 ```
